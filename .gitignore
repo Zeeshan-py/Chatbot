@@ -64,3 +64,4 @@ tmp/
 *_secrets.py
 secrets.json
 config_local.py
+node_modules

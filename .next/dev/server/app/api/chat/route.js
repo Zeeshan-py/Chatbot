@@ -1,0 +1,11 @@
+var R=require("../../../chunks/[turbopack]_runtime.js")("server/app/api/chat/route.js")
+R.c("server/chunks/ac46c_@vercel_oidc_dist_d85b682c._.js")
+R.c("server/chunks/5e91a_next_dist_ede3b751._.js")
+R.c("server/chunks/4b6e4_@opentelemetry_api_build_esm_9cee443b._.js")
+R.c("server/chunks/518ff_zod_43623064._.js")
+R.c("server/chunks/0679b_ai_dist_index_mjs_4d306dab._.js")
+R.c("server/chunks/node_modules__pnpm_004b20ba._.js")
+R.c("server/chunks/[root-of-the-server]__18c0b531._.js")
+R.c("server/chunks/_next-internal_server_app_api_chat_route_actions_ac0c75e3.js")
+R.m("[project]/node_modules/.pnpm/next@16.0.7_@opentelemetry+_da38feb651f7759516a3998d29ce5c99/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/chat/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/node_modules/.pnpm/next@16.0.7_@opentelemetry+_da38feb651f7759516a3998d29ce5c99/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/app/api/chat/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

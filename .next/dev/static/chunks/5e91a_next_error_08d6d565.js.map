@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 3, "column": 0}, "map": {"version":3,"sources":["file:///D:/Languages/Python/Python%20With%20Harry/Mega%20project/Mega%20project/node_modules/.pnpm/next%4016.0.7_%40opentelemetry%2B_da38feb651f7759516a3998d29ce5c99/node_modules/next/error.js"],"sourcesContent":["module.exports = require('./dist/pages/_error')\n"],"names":[],"mappings":"AAAA,OAAO,OAAO","ignoreList":[0]}}]
+}
