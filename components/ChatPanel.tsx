@@ -8,7 +8,7 @@ export default function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');
   
-  const { messages, append, isLoading, status } = useChat({
+  const { messages, sendMessage, isLoading, status } = useChat({
     transport: new DefaultChatTransport({ api: '/api/chat' }),
   });
 
@@ -24,7 +24,7 @@ export default function ChatPanel() {
     e.preventDefault();
     if (!input.trim()) return;
     
-    append({ role: 'user', content: input });
+    sendMessage({ text: input });
     setInput('');
   };
 
@@ -55,7 +55,7 @@ export default function ChatPanel() {
                   }`}
                 >
                   <p className="text-sm leading-relaxed">
-                    {typeof message.content === 'string' ? message.content : '...'}
+                    {message.parts?.filter((p) => p.type === 'text').map((p: any) => p.text).join('') || (typeof message.content === 'string' ? message.content : '...')}
                   </p>
                 </div>
               </div>
