@@ -16,6 +16,9 @@ const config: Config = {
         "accent-light": "hsl(var(--accent-light))",
         border: "hsl(var(--border))",
         muted: "hsl(var(--muted))",
+        "muted-foreground": "hsl(var(--muted-foreground))",
+        secondary: "hsl(var(--secondary))",
+        "secondary-foreground": "hsl(var(--secondary-foreground))",
       },
       borderRadius: {
         lg: "var(--radius)",

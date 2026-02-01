@@ -11,6 +11,9 @@
   --accent-light: 290 70% 65%;
   --border: 210 20% 20%;
   --muted: 0 0% 40%;
+  --muted-foreground: 0 0% 60%;
+  --secondary: 210 20% 15%;
+  --secondary-foreground: 0 0% 85%;
   --radius: 0.5rem;
 }
 
