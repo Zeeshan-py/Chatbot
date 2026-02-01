@@ -1,0 +1,25 @@
+# FRIDAY AI Desktop Assistant - Required Dependencies
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# OpenAI API
+openai>=1.12.0
+
+# System automation
+pyautogui>=0.9.54
+psutil>=5.9.8
+
+# HTTP requests
+requests>=2.31.0
+
+# Terminal colors
+colorama>=0.4.6
+
+# Speech recognition (for voice mode - optional)
+SpeechRecognition>=3.10.0
+pyttsx3>=2.90
+
+# Optional: Browser automation (uncomment if needed)
+# selenium>=4.16.0
+# playwright>=1.40.0
