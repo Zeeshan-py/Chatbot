@@ -55,7 +55,7 @@ export default function ChatPanel() {
                   }`}
                 >
                   <p className="text-sm leading-relaxed">
-                    {message.parts?.filter((p) => p.type === 'text').map((p: any) => p.text).join('') || (typeof message.content === 'string' ? message.content : '...')}
+                    {typeof message.content === 'string' ? message.content : '...'}
                   </p>
                 </div>
               </div>

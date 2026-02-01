@@ -1,5 +1,6 @@
 'use client';
 
+import type React from 'react';
 import Header from '@/components/Header';
 import ChatPanel from '@/components/ChatPanel';
 import ActionPlan from '@/components/ActionPlan';
