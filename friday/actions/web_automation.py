@@ -68,29 +68,42 @@ class WebAutomation:
             return "✅ Chrome browser started (User Profile Loaded)"
             
         except Exception as e:
+            # Fallback for when Chrome is already running
+            if "Chrome instance exited" in str(e) or "DevToolsActivePort file doesn't exist" in str(e):
+                return "⚠️ Chrome is already open. Switching to lightweight mode (non-Selenium)."
             return f"❌ Failed to start browser: {str(e)}"
     
     def navigate_to(self, url: str) -> str:
         """
-        Navigate to URL.
-        
-        Args:
-            url: Website URL
-            
-        Returns:
-            Success message
+        Navigate to URL (Selenium or Fallback).
         """
         try:
+            # 1. Try to ensure browser is running using Selenium
+            selenium_active = False
             if not self.driver:
-                self.start_browser()
-            
+                result = self.start_browser()
+                if "✅" in result and "User Profile" in result:
+                    selenium_active = True
+                # If start_browser returned warning about existing chrome, selenium_active remains False
+            else:
+                 selenium_active = True
+
+            # 2. Use Selenium if active
+            if selenium_active and self.driver:
+                if not url.startswith(('http://', 'https://')):
+                    url = 'https://' + url
+                
+                self.driver.get(url)
+                time.sleep(2)  # Wait for page load
+                return f"✅ Navigated to {url}"
+
+            # 3. Fallback to lightweight mode (webbrowser)
+            import webbrowser
             if not url.startswith(('http://', 'https://')):
                 url = 'https://' + url
             
-            self.driver.get(url)
-            time.sleep(2)  # Wait for page load
-            
-            return f"✅ Navigated to {url}"
+            webbrowser.open(url)
+            return f"✅ Navigated to {url} (lightweight mode)"
             
         except Exception as e:
             return f"❌ Navigation failed: {str(e)}"
@@ -107,39 +120,63 @@ class WebAutomation:
             Search results or success message
         """
         try:
+            # 1. Try to ensure browser is running using Selenium
+            selenium_active = False
             if not self.driver:
-                self.start_browser()
-            
-            # Go to Google
-            self.driver.get("https://www.google.com")
-            time.sleep(1)
-            
-            # Find search box and enter query
-            search_box = self.wait.until(
-                EC.presence_of_element_located((By.NAME, "q"))
-            )
-            search_box.clear()
-            search_box.send_keys(query)
-            search_box.send_keys(Keys.RETURN)
-            
-            time.sleep(2)  # Wait for results
-            
-            if open_first:
-                # Click first result
+                result = self.start_browser()
+                if "✅" in result and "User Profile" in result:
+                    selenium_active = True
+                # If start_browser returned warning about existing chrome, selenium_active remains False
+            else:
+                 selenium_active = True
+
+            # 2. Use Selenium if active
+            if selenium_active and self.driver:
                 try:
-                    first_result = self.wait.until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, "h3"))
+                    # Go to Google
+                    self.driver.get("https://www.google.com")
+                    time.sleep(1)
+                    
+                    # Find search box and enter query
+                    search_box = self.wait.until(
+                        EC.presence_of_element_located((By.NAME, "q"))
                     )
-                    first_result.click()
-                    time.sleep(2)
-                    return f"✅ Searched '{query}' and opened first result"
-                except:
+                    search_box.clear()
+                    search_box.send_keys(query)
+                    search_box.send_keys(Keys.RETURN)
+                    
+                    if open_first:
+                         # Basic Wait
+                        time.sleep(2)
+                        first_result = self.driver.find_element(By.CSS_SELECTOR, "h3")
+                        if first_result:
+                            first_result.click()
+                            return f"✅ Opened first result for '{query}'"
+                    
+                    return f"✅ Searched Google for '{query}'"
+                except Exception:
+                    # If selenium fails mid-flight, fall through to fallback
                     pass
+
+            # 3. Fallback to lightweight mode (webbrowser)
+            import webbrowser
+            import urllib.parse
+            encoded_query = urllib.parse.quote(query)
+            webbrowser.open(f"https://www.google.com/search?q={encoded_query}")
+            return f"✅ Opened search for '{query}' (lightweight mode)"
+            
+        except Exception as e:
+            return f"❌ Search failed: {str(e)}"
             
             return f"✅ Searched Google for '{query}'"
             
         except Exception as e:
-            return f"❌ Search failed: {str(e)}"
+            # Final safety fallback
+            import webbrowser
+            import urllib.parse
+            encoded_query = urllib.parse.quote(query)
+            webbrowser.open(f"https://www.google.com/search?q={encoded_query}")
+            return f"✅ Opened search for '{query}' (fallback after error: {str(e)})"
     
     def read_page_content(self) -> str:
         """
@@ -440,6 +477,8 @@ def fill_form(field_selector: str, value: str) -> str:
     return web_automation.fill_form(field_selector, value)
 
 
-# Alias for AI Brain
-google_search = search_and_browse
+# Wrapper for AI Brain compatibility
+def google_search(query: str, open_first: bool = True) -> str:
+    """Wrapper for google_search matching AI Brain signature"""
+    return web_automation.google_search(query, open_first)
 navigate_to = browse_to

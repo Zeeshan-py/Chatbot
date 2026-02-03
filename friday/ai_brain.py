@@ -282,40 +282,85 @@ CURRENT CONTEXT:
 
     def _process_local(self, user_input: str) -> Dict[str, Any]:
         """
-        Legacy local mode fallback using Regex Pattern Matching.
-        Allows basic usage without OpenAI.
+        Smart Local Mode Fallback.
+        Handles:
+        - Website aliases (yt -> youtube.com) via 'browse_to'
+        - "open [query] on chrome" -> 'google_search' or 'browse_to'
+        - App opening (whatsapp, calc)
+        - System commands (time, date)
         """
+        from friday.config import WEBSITE_MAPPINGS
         input_lower = user_input.lower().strip()
         
-        # 1. App Opening
+        # 1. Explicit Web Browsing ("open ... on chrome", "browse to ...")
+        # Pattern: open [target] on chrome/browser
+        chrome_match = re.search(r'open\s+(.+?)\s+(?:on|in)\s+(?:chrome|browser|firefox|edge)', input_lower)
+        if chrome_match:
+            target = chrome_match.group(1).strip()
+            
+            # Check if target is a known shortcut (e.g. "yt")
+            if target in WEBSITE_MAPPINGS:
+                url = WEBSITE_MAPPINGS[target]
+                return {
+                    "action": "browse_to",
+                    "parameters": {"url": url},
+                    "reasoning": f"Browsing to {url} (Local Mode: Shortcut)"
+                }
+            
+            # Check if target looks like a URL
+            if "." in target and " " not in target:
+                return {
+                    "action": "browse_to",
+                    "parameters": {"url": target},
+                    "reasoning": f"Browsing to {target} (Local Mode: URL)"
+                }
+                
+            # Otherwise, assume it's a search
+            return {
+                "action": "google_search",
+                "parameters": {"query": target, "open_first": True},
+                "reasoning": f"Searching for '{target}' (Local Mode: Explicit Web)"
+            }
+
+        # 2. General "Open" Command (could be App or Website)
         if re.search(r'\bopen\b', input_lower):
-            app_match = re.search(r'open\s+([\w\s]+?)(?:\s|$)', input_lower)
-            if app_match:
-                app_name = app_match.group(1).strip()
+            target_match = re.search(r'open\s+([\w\s\.]+?)(?:\s|$)', input_lower)
+            if target_match:
+                target = target_match.group(1).strip()
+                
+                # Check Website Shortcuts First (yt, fb, etc.)
+                if target in WEBSITE_MAPPINGS:
+                    url = WEBSITE_MAPPINGS[target]
+                    return {
+                        "action": "browse_to",
+                        "parameters": {"url": url},
+                        "reasoning": f"Browsing to {url} (Local Mode: Shortcut)"
+                    }
+                
+                # Fallback to App Opening
                 return {
                     "action": "open_app",
-                    "parameters": {"app_name": app_name},
-                    "reasoning": f"Opening {app_name} (local mode)"
+                    "parameters": {"app_name": target},
+                    "reasoning": f"Opening {target} (Local Mode: App)"
                 }
         
-        # 2. Web Search (Compound or Direct)
-        # Handle "open chrome and search ..." or just "search ..."
+        # 3. Web Search (Direct "Search for...")
         if re.search(r'\bsearch\b', input_lower):
             query_match = re.search(r'search(?:\s+for)?\s+(.+)', input_lower)
             if query_match:
                 query = query_match.group(1).strip()
-                # If "and" is present, split and take the last part as query if it makes sense
+                # If "and" is present, use last part
                 if " and " in query:
-                    parts = query.split(" and ")
-                    query = parts[-1] # simplistic assumption
-                
+                   parts = query.split(" and ")
+                   query = parts[-1]
+                   
                 return {
                     "action": "google_search",
                     "parameters": {"query": query, "open_first": True},
-                    "reasoning": f"Searching for '{query}' (local mode)"
+                    "reasoning": f"Searching for '{query}' (Local Mode)"
                 }
-
-        # 3. App Closign
+        
+        # 4. App Closing
         if re.search(r'\bclose\b', input_lower):
             app_match = re.search(r'close\s+([\w\s]+?)(?:\s|$)', input_lower)
             if app_match:
@@ -323,29 +368,38 @@ CURRENT CONTEXT:
                 return {
                     "action": "close_app",
                     "parameters": {"app_name": app_name},
-                    "reasoning": f"Closing {app_name} (local mode)"
+                    "reasoning": f"Closing {app_name} (Local Mode)"
                 }
 
-        # 4. System Info
+        # 5. System Info
         if "time" in input_lower or "date" in input_lower:
             return {
                 "action": "chat",
                 "parameters": {"response": system.get_time()},
-                "reasoning": "Time request (local mode)"
+                "reasoning": "Time request (Local Mode)"
             }
 
-        # 5. List Files
+        # 6. List Files
         if "list files" in input_lower:
              return {
                 "action": "list_files",
                 "parameters": {"directory_path": "."},
-                "reasoning": "Listing files (local mode)"
+                "reasoning": "Listing files (Local Mode)"
+            }
+            
+        # 7. Website Short-hand (Direct "yt", "fb" etc.)
+        if input_lower in WEBSITE_MAPPINGS:
+            url = WEBSITE_MAPPINGS[input_lower]
+            return {
+                "action": "browse_to",
+                "parameters": {"url": url},
+                "reasoning": f"Browsing to {url} (Local Mode: Direct Shortcut)"
             }
 
         return {
             "action": "chat",
-            "parameters": {"response": "I am in LOCAL MODE (Offline). I can understand basic commands like 'open chrome', 'search for X', 'what time is it'. For complex tasks, I need a working OpenAI key."},
-            "reasoning": "Offline mode"
+            "parameters": {"response": "I am in LOCAL MODE (Offline). Try 'open yt', 'open chrome and search X', 'open whatsapp', or 'time'."},
+            "reasoning": "Offline mode usage info"
         }
 
 # Global AI brain instance

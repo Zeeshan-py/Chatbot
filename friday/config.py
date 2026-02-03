@@ -130,3 +130,27 @@ SEARCH_ENGINES = {
     "duckduckgo": "https://duckduckgo.com/?q={}",
     "youtube": "https://www.youtube.com/results?search_query={}"
 }
+
+# Website Shortcuts for Natural Language
+WEBSITE_MAPPINGS = {
+    "yt": "youtube.com",
+    "youtube": "youtube.com",
+    "fb": "facebook.com",
+    "facebook": "facebook.com",
+    "ig": "instagram.com",
+    "instagram": "instagram.com",
+    "twitter": "twitter.com",
+    "x": "x.com",
+    "github": "github.com",
+    "git": "github.com",
+    "google": "google.com",
+    "gpt": "chatgpt.com",
+    "chatgpt": "chatgpt.com",
+    "gmail": "gmail.com",
+    "mail": "gmail.com",
+    "amazon": "amazon.com",
+    "reddit": "reddit.com",
+    "netflix": "netflix.com",
+    "linkedin": "linkedin.com",
+    "whatsapp": "web.whatsapp.com", # distinguish from app
+}

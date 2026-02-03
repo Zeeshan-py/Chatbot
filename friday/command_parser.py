@@ -60,6 +60,7 @@ class CommandParser:
             "get_webpage_info": web_automation.get_webpage_info,
             "close_browser": web_automation.close_browser,
             "webpage_screenshot": web_automation.webpage_screenshot,
+            "google_search": web_automation.google_search,
             
             # Advanced Mode Actions (⚠️ powerful!)
             "execute_command": advanced.execute_system_command,
