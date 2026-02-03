@@ -1,26 +1,28 @@
 """
 FRIDAY AI Brain Module
-Handles communication with OpenAI API and ensures structured JSON responses.
-Includes local fallback for when OpenAI is unavailable.
+Handles communication with OpenAI API using the "Tools" (Function Calling) architecture.
+This enables the Agentic Loop: Think -> Act -> Observe -> Think.
+Includes ROBUST LOCAL FALLBACK for offline/quota-exceeded scenarios.
 """
 
 import json
+import traceback
 import re
-from typing import Dict, Any, Optional
-from openai import OpenAI
+from typing import Dict, Any, List, Optional
+from openai import OpenAI, RateLimitError, APIError, APIConnectionError
 from friday.config import config
-
+from friday.actions import apps, files, browser, system, advanced, web_automation
 
 class AIBrain:
     """
-    AI Brain that communicates with OpenAI to interpret user intent
-    and return structured JSON commands.
+    Agentic Brain that uses OpenAI's Tools API to perform multi-step tasks.
+    Falls back to Regex-based Local Mode if API is unavailable.
     """
     
     def __init__(self):
         try:
             self.client = OpenAI(api_key=config.openai_api_key)
-            self.model = "gpt-3.5-turbo"
+            self.model = "gpt-4-turbo" 
             self.openai_available = True
         except Exception:
             self.client = None
@@ -28,256 +30,264 @@ class AIBrain:
         
         self.conversation_history = []
         self.use_local_mode = not self.openai_available
+        self.max_steps = 15  # Prevent infinite loops
         
+        # Define available tools for the AI
+        self.tools = self._get_tools_schema()
+        
+        # Map tool names to actual functions
+        self.available_functions = {
+            "run_terminal_command": advanced.execute_system_command,
+            "open_app": apps.open_application,
+            "close_app": apps.close_application,
+            "google_search": web_automation.google_search,
+            "read_webpage": web_automation.read_webpage,
+            "browse_to": web_automation.navigate_to,
+            "web_click": web_automation.click_element,
+            "web_type": web_automation.fill_form,
+            "create_file": files.create_file,
+            "read_file": advanced.read_any_file,
+            "list_files": files.list_files,
+            "get_current_time": system.get_time,
+        }
+
     def _get_system_prompt(self) -> str:
-        """
-        System prompt that instructs the AI to return structured JSON commands
-        and follow strict safety guidelines.
-        """
-        return """You are FRIDAY, an AI-powered desktop automation assistant.
+        return """You are FRIDAY, an advanced autonomous AI agent running on a Windows laptop.
 
-CRITICAL RULES:
-1. You MUST respond ONLY in valid JSON format
-2. You can ONLY use actions from the ALLOWED_ACTIONS list
-3. NEVER invent new actions or commands
-4. If you cannot perform a task safely, use the "chat" action to explain why
-5. Always be concise and helpful
+CAPABILITIES:
+1. **OS Access**: You can run ANY terminal command using `run_terminal_command`. Use PowerShell syntax.
+2. **Web Research**: You can search Google and browse websites to find information.
+3. **Planning**: You can break down complex tasks into steps.
+4. **File Management**: You can create, read, and edit files.
 
-ALLOWED_ACTIONS:
-- open_app: Open an application (parameters: app_name)
-- close_app: Close an application (parameters: app_name)
-- search_web: Search on the web (parameters: query, engine)
-- open_url: Open a specific URL (parameters: url)
-- create_file: Create a new file (parameters: file_path, content)
-- create_folder: Create a new folder (parameters: folder_path)
-- delete_file: Delete a file (parameters: file_path)
-- delete_folder: Delete a folder (parameters: folder_path)
-- move_file: Move a file (parameters: source, destination)
-- copy_file: Copy a file (parameters: source, destination)
-- list_files: List files in a directory (parameters: directory_path)
-- organize_downloads: Organize downloads folder by file type (parameters: none)
-- mouse_click: Click at coordinates (parameters: x, y, button)
-- mouse_move: Move mouse to coordinates (parameters: x, y)
-- type_text: Type text (parameters: text)
-- press_key: Press a keyboard key (parameters: key)
-- take_screenshot: Take a screenshot (parameters: save_path)
-- get_news: Fetch latest news (parameters: category)
-- chat: Just chat without action (parameters: response)
+PERFORMANCE TIPS:
+- **Think First**: Before taking action, analyze the user's request.
+- **Be Resourceful**: If one method fails, try another.
+- **Verify**: Check if your actions succeeded.
+- **Privacy**: Do not upload personal user data.
 
-RESPONSE FORMAT:
-Always respond with valid JSON in this exact format:
+CURRENT CONTEXT:
+- OS: Windows
+- User: Boss / Sir
+- Current Directory: Project Root
+"""
 
-{
-  "action": "action_name",
-  "parameters": {
-    "param1": "value1",
-    "param2": "value2"
-  },
-  "reasoning": "Brief explanation of why you chose this action"
-}
-
-For chat responses:
-{
-  "action": "chat",
-  "parameters": {
-    "response": "Your message here"
-  },
-  "reasoning": "User asked a question that doesn't require automation"
-}
-
-EXAMPLES:
-
-User: "Open Chrome"
-Response:
-{
-  "action": "open_app",
-  "parameters": {
-    "app_name": "chrome"
-  },
-  "reasoning": "User wants to launch Google Chrome browser"
-}
-
-User: "Search for Python tutorials"
-Response:
-{
-  "action": "search_web",
-  "parameters": {
-    "query": "Python tutorials",
-    "engine": "google"
-  },
-  "reasoning": "User wants to search for educational content"
-}
-
-User: "What's the weather like?"
-Response:
-{
-  "action": "chat",
-  "parameters": {
-    "response": "I can't check the weather directly, but I can search for it online. Would you like me to search for your local weather?"
-  },
-  "reasoning": "Weather checking requires external API not in allowed actions"
-}
-
-User: "Create a folder called Projects"
-Response:
-{
-  "action": "create_folder",
-  "parameters": {
-    "folder_path": "Projects"
-  },
-  "reasoning": "User wants to create a new directory"
-}
-
-SAFETY RULES:
-- Never suggest actions that could harm the system
-- If unsure about a path, ask for clarification
-- Always use relative paths unless absolute paths are explicitly provided
-- For destructive actions (delete, move), be explicit about what will happen
-- If the user's request is ambiguous, ask for clarification using "chat" action
-
-Remember: ONLY output valid JSON. No additional text, no markdown, no explanations outside the JSON structure."""
+    def _get_tools_schema(self) -> List[Dict[str, Any]]:
+        """Define the tools available to the AI"""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_terminal_command",
+                    "description": "Execute a PowerShell command on the local machine.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "The PowerShell command to run"}
+                        },
+                        "required": ["command"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "google_search",
+                    "description": "Search Google for information.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query"},
+                            "open_first": {"type": "boolean", "description": "Open first result (default: False)"}
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "open_app",
+                    "description": "Launch a desktop application.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app_name": {"type": "string", "description": "Name of the application"}
+                        },
+                        "required": ["app_name"]
+                    }
+                }
+            },
+             {
+                "type": "function",
+                "function": {
+                    "name": "browse_to",
+                    "description": "Navigate the browser to a URL.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "The URL to visit"}
+                        },
+                        "required": ["url"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_webpage",
+                    "description": "Read text from current webpage.",
+                    "parameters": {"type": "object", "properties": {}}
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "description": "Create a new file.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {"type": "string", "description": "Path to new file"},
+                            "content": {"type": "string", "description": "File content"}
+                        },
+                        "required": ["file_path", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a local file.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {"type": "string", "description": "Path to the file"}
+                        },
+                        "required": ["file_path"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "list_files",
+                    "description": "List files in a directory.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "directory_path": {"type": "string", "description": "Directory to list"}
+                        },
+                        "required": ["directory_path"]
+                    }
+                }
+            }
+        ]
 
     def process_command(self, user_input: str) -> Dict[str, Any]:
         """
-        Process user command and return structured JSON response from AI.
-        Falls back to local processing if OpenAI is unavailable.
-        
-        Args:
-            user_input: Natural language command from user
-            
-        Returns:
-            Dict containing action, parameters, and reasoning
+        Main Agentic Loop with Error Handling and Local Fallback.
         """
-        # Try local mode first if OpenAI unavailable or use_local_mode is enabled
+        # Global local mode switch
         if self.use_local_mode or not self.openai_available:
             return self._process_local(user_input)
+
+        self.conversation_history.append({"role": "user", "content": user_input})
+        step_count = 0
         
-        try:
-            # Add user message to history
-            self.conversation_history.append({
-                "role": "user",
-                "content": user_input
-            })
-            
-            # Prepare messages for API call
-            messages = [
-                {"role": "system", "content": self._get_system_prompt()},
-                *self.conversation_history[-10:]  # Keep last 10 messages for context
-            ]
-            
-            # Call OpenAI API
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=500
-            )
-            
-            # Extract AI response
-            ai_response = response.choices[0].message.content.strip()
-            
-            # Add assistant response to history
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": ai_response
-            })
-            
-            # Parse JSON response
-            command_dict = self._parse_ai_response(ai_response)
-            
-            return command_dict
-            
-        except Exception as e:
-            error_str = str(e)
-            
-            # Check if it's a quota error
-            if "429" in error_str or "quota" in error_str.lower():
-                print(f"⚠️  OpenAI API quota exceeded. Switching to local mode...")
+        while step_count < self.max_steps:
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self._get_system_prompt()},
+                        *self.conversation_history
+                    ],
+                    tools=self.tools,
+                    tool_choice="auto",
+                    temperature=0.0
+                )
+                
+                response_message = response.choices[0].message
+                
+                if response_message.tool_calls:
+                    self.conversation_history.append(response_message)
+                    
+                    for tool_call in response_message.tool_calls:
+                        function_name = tool_call.function.name
+                        function_args = json.loads(tool_call.function.arguments)
+                        
+                        print(f"🔧 Agent is calling tool: {function_name} with args: {function_args}")
+                        
+                        function_to_call = self.available_functions.get(function_name)
+                        
+                        if function_to_call:
+                            try:
+                                if function_name == "run_terminal_command":
+                                    function_response = function_to_call(function_args.get("command"))
+                                elif function_name == "google_search":
+                                     function_response = function_to_call(function_args.get("query"), function_args.get("open_first", False))
+                                elif function_name == "create_file":
+                                     function_response = function_to_call(function_args.get("file_path"), function_args.get("content"))
+                                elif function_name == "read_file":
+                                     function_response = function_to_call(function_args.get("file_path"))
+                                elif function_name == "open_app":
+                                     function_response = function_to_call(function_args.get("app_name"))
+                                elif function_name == "browse_to":
+                                     function_response = function_to_call(function_args.get("url"))
+                                else:
+                                     function_response = function_to_call(**function_args)
+                            except Exception as e:
+                                function_response = f"Error executing tool {function_name}: {str(e)}\n{traceback.format_exc()}"
+                        else:
+                            function_response = f"Error: Tool {function_name} not found."
+
+                        self.conversation_history.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": function_name,
+                            "content": str(function_response)
+                        })
+                    step_count += 1
+                else:
+                    final_response = response_message.content
+                    self.conversation_history.append({"role": "assistant", "content": final_response})
+                    return {
+                        "action": "chat",
+                        "parameters": {"response": final_response},
+                        "reasoning": "Task completed."
+                    }
+                    
+            except (RateLimitError, APIConnectionError) as e:
+                print(f"\n⚠️  OpenAI API Error: {str(e)}")
+                print("🔄 Automatic Fallback: Switching to LOCAL MODE...")
                 self.use_local_mode = True
+                self.openai_available = False
                 return self._process_local(user_input)
-            
-            print(f"Error in AI processing: {e}")
-            return {
-                "action": "chat",
-                "parameters": {
-                    "response": f"I encountered an error processing your request: {str(e)}"
-                },
-                "reasoning": "Error occurred during processing"
-            }
-    
-    def _parse_ai_response(self, response: str) -> Dict[str, Any]:
-        """
-        Parse and validate AI response JSON.
+                
+            except Exception as e:
+                print(f"CRITICAL ERROR in Agent Loop: {e}")
+                return {
+                    "action": "chat",
+                    "parameters": {"response": f"I encountered a critical error: {e}"},
+                    "reasoning": "Crash"
+                }
         
-        Args:
-            response: Raw response from OpenAI
-            
-        Returns:
-            Validated command dictionary
-        """
-        try:
-            # Remove markdown code blocks if present
-            if response.startswith("```json"):
-                response = response.replace("```json", "").replace("```", "").strip()
-            elif response.startswith("```"):
-                response = response.replace("```", "").strip()
-            
-            # Parse JSON
-            command_dict = json.loads(response)
-            
-            # Validate required fields
-            if "action" not in command_dict:
-                raise ValueError("Response missing 'action' field")
-            
-            if "parameters" not in command_dict:
-                command_dict["parameters"] = {}
-            
-            if "reasoning" not in command_dict:
-                command_dict["reasoning"] = "No reasoning provided"
-            
-            return command_dict
-            
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse AI response as JSON: {response}")
-            return {
-                "action": "chat",
-                "parameters": {
-                    "response": "I had trouble formatting my response. Could you rephrase your request?"
-                },
-                "reasoning": "JSON parsing error"
-            }
-        except Exception as e:
-            print(f"Error parsing AI response: {e}")
-            return {
-                "action": "chat",
-                "parameters": {
-                    "response": "I encountered an error. Please try again."
-                },
-                "reasoning": "Parsing error"
-            }
-    
-    def clear_history(self) -> None:
-        """Clear conversation history"""
-        self.conversation_history = []
-    
-    def set_model(self, model: str) -> None:
-        """Change the AI model being used"""
-        self.model = model
-    
+        return {
+            "action": "chat",
+            "parameters": {"response": "I reached my maximum step limit."},
+            "reasoning": "Max steps reached"
+        }
+
     def _process_local(self, user_input: str) -> Dict[str, Any]:
         """
-        Local command processing without OpenAI (fallback mode).
-        Uses pattern matching to interpret common commands.
-        
-        Args:
-            user_input: User's command
-            
-        Returns:
-            Command dictionary
+        Legacy local mode fallback using Regex Pattern Matching.
+        Allows basic usage without OpenAI.
         """
         input_lower = user_input.lower().strip()
         
-        # Application commands
+        # 1. App Opening
         if re.search(r'\bopen\b', input_lower):
             app_match = re.search(r'open\s+([\w\s]+?)(?:\s|$)', input_lower)
             if app_match:
@@ -288,6 +298,24 @@ Remember: ONLY output valid JSON. No additional text, no markdown, no explanatio
                     "reasoning": f"Opening {app_name} (local mode)"
                 }
         
+        # 2. Web Search (Compound or Direct)
+        # Handle "open chrome and search ..." or just "search ..."
+        if re.search(r'\bsearch\b', input_lower):
+            query_match = re.search(r'search(?:\s+for)?\s+(.+)', input_lower)
+            if query_match:
+                query = query_match.group(1).strip()
+                # If "and" is present, split and take the last part as query if it makes sense
+                if " and " in query:
+                    parts = query.split(" and ")
+                    query = parts[-1] # simplistic assumption
+                
+                return {
+                    "action": "google_search",
+                    "parameters": {"query": query, "open_first": True},
+                    "reasoning": f"Searching for '{query}' (local mode)"
+                }
+
+        # 3. App Closign
         if re.search(r'\bclose\b', input_lower):
             app_match = re.search(r'close\s+([\w\s]+?)(?:\s|$)', input_lower)
             if app_match:
@@ -297,190 +325,28 @@ Remember: ONLY output valid JSON. No additional text, no markdown, no explanatio
                     "parameters": {"app_name": app_name},
                     "reasoning": f"Closing {app_name} (local mode)"
                 }
-        
-        # Search commands
-        if re.search(r'\bsearch\b', input_lower):
-            query_match = re.search(r'search(?:\s+for)?\s+(.+)', input_lower)
-            if query_match:
-                query = query_match.group(1).strip()
-                engine = "google"
-                if "youtube" in input_lower:
-                    engine = "youtube"
-                elif "bing" in input_lower:
-                    engine = "bing"
-                return {
-                    "action": "search_web",
-                    "parameters": {"query": query, "engine": engine},
-                    "reasoning": f"Searching for '{query}' (local mode)"
-                }
-        
-        # URL opening
-        if re.search(r'\b(go to|open|visit)\b.*\.(com|org|net|io|co)', input_lower):
-            url_match = re.search(r'([\w-]+\.(?:com|org|net|io|co|uk|gov)(?:/[\w-]*)?)', input_lower)
-            if url_match:
-                url = url_match.group(1)
-                return {
-                    "action": "open_url",
-                    "parameters": {"url": url},
-                    "reasoning": f"Opening {url} (local mode)"
-                }
-        
-        # Web automation commands
-        if "read" in input_lower and ("page" in input_lower or "webpage" in input_lower or "website" in input_lower):
+
+        # 4. System Info
+        if "time" in input_lower or "date" in input_lower:
             return {
-                "action": "read_webpage",
-                "parameters": {},
-                "reasoning": "Reading current webpage content (local mode)"
+                "action": "chat",
+                "parameters": {"response": system.get_time()},
+                "reasoning": "Time request (local mode)"
             }
-        
-        if "page info" in input_lower or "webpage info" in input_lower:
-            return {
-                "action": "get_webpage_info",
-                "parameters": {},
-                "reasoning": "Getting webpage information (local mode)"
-            }
-        
-        if "screenshot" in input_lower and ("page" in input_lower or "webpage" in input_lower):
-            return {
-                "action": "webpage_screenshot",
-                "parameters": {},
-                "reasoning": "Taking webpage screenshot (local mode)"
-            }
-        
-        if "close browser" in input_lower or "close chrome" in input_lower:
-            return {
-                "action": "close_browser",
-                "parameters": {},
-                "reasoning": "Closing browser (local mode)"
-            }
-        
-        if "browse to" in input_lower or "navigate to" in input_lower:
-            url_match = re.search(r'(?:browse|navigate)\s+to\s+(.+)', input_lower)
-            if url_match:
-                url = url_match.group(1).strip()
-                return {
-                    "action": "browse_to",
-                    "parameters": {"url": url},
-                    "reasoning": f"Navigating to {url} (local mode)"
-                }
-        
-        if "search and open" in input_lower or "search and browse" in input_lower:
-            query_match = re.search(r'search\s+and\s+(?:open|browse)\s+(.+)', input_lower)
-            if query_match:
-                query = query_match.group(1).strip()
-                return {
-                    "action": "search_and_browse",
-                    "parameters": {"query": query},
-                    "reasoning": f"Searching and opening first result for '{query}' (local mode)"
-                }
-        
-        if "start browser" in input_lower or ("open" in input_lower and "browser" in input_lower):
-            return {
-                "action": "start_browser",
-                "parameters": {},
-                "reasoning": "Starting browser (local mode)"
-            }
-        
-        # File operations
-        if "create file" in input_lower or "make file" in input_lower:
-            file_match = re.search(r'(?:create|make)\s+(?:a\s+)?file\s+(?:called\s+)?([\w.-]+)', input_lower)
-            if file_match:
-                filename = file_match.group(1)
-                return {
-                    "action": "create_file",
-                    "parameters": {"file_path": filename, "content": ""},
-                    "reasoning": f"Creating file {filename} (local mode)"
-                }
-        
-        if "create folder" in input_lower or "make folder" in input_lower:
-            folder_match = re.search(r'(?:create|make)\s+(?:a\s+)?folder\s+(?:called\s+)?([\w.-]+)', input_lower)
-            if folder_match:
-                foldername = folder_match.group(1)
-                return {
-                    "action": "create_folder",
-                    "parameters": {"folder_path": foldername},
-                    "reasoning": f"Creating folder {foldername} (local mode)"
-                }
-        
-        if "list files" in input_lower or "show files" in input_lower:
-            dir_match = re.search(r'(?:list|show)\s+files\s+(?:in\s+)?([\w./\\-]+)', input_lower)
-            directory = dir_match.group(1) if dir_match else "."
-            return {
+
+        # 5. List Files
+        if "list files" in input_lower:
+             return {
                 "action": "list_files",
-                "parameters": {"directory_path": directory},
+                "parameters": {"directory_path": "."},
                 "reasoning": "Listing files (local mode)"
             }
-        
-        if "organize downloads" in input_lower or "clean downloads" in input_lower:
-            return {
-                "action": "organize_downloads",
-                "parameters": {},
-                "reasoning": "Organizing downloads folder (local mode)"
-            }
-        
-        # System commands
-        if "system info" in input_lower or "system information" in input_lower:
-            return {
-                "action": "chat",
-                "parameters": {"response": "System info command detected but not yet implemented in local mode. This requires the system.get_system_info() function."},
-                "reasoning": "System info request (local mode)"
-            }
-        
-        if "time" in input_lower or "date" in input_lower:
-            from datetime import datetime
-            now = datetime.now()
-            date_str = now.strftime("%A, %B %d, %Y")
-            time_str = now.strftime("%I:%M:%S %p")
-            return {
-                "action": "chat",
-                "parameters": {"response": f"📅 {date_str}\n🕐 {time_str}"},
-                "reasoning": "Time/date request (local mode)"
-            }
-        
-        if "news" in input_lower:
-            return {
-                "action": "get_news",
-                "parameters": {"category": "general"},
-                "reasoning": "Fetching news (local mode)"
-            }
-        
-        if "screenshot" in input_lower or "take screenshot" in input_lower:
-            return {
-                "action": "take_screenshot",
-                "parameters": {},
-                "reasoning": "Taking screenshot (local mode)"
-            }
-        
-        # Mouse/keyboard
-        if "click" in input_lower:
-            coord_match = re.search(r'click\s+(?:at\s+)?(?:\()?\s*(\d+)\s*,\s*(\d+)', input_lower)
-            if coord_match:
-                x, y = int(coord_match.group(1)), int(coord_match.group(2))
-                return {
-                    "action": "mouse_click",
-                    "parameters": {"x": x, "y": y, "button": "left"},
-                    "reasoning": f"Clicking at ({x}, {y}) (local mode)"
-                }
-        
-        if "type" in input_lower:
-            type_match = re.search(r'type\s+(.+)', input_lower)
-            if type_match:
-                text = type_match.group(1).strip()
-                return {
-                    "action": "type_text",
-                    "parameters": {"text": text},
-                    "reasoning": "Typing text (local mode)"
-                }
-        
-        # Default: chat response
+
         return {
             "action": "chat",
-            "parameters": {
-                "response": f"I'm running in local mode (OpenAI unavailable). I understood: '{user_input}' but couldn't match it to a command. Try: 'open chrome', 'search for python', 'create folder test', 'list files', 'get news', or 'help'."
-            },
-            "reasoning": "Unrecognized command (local mode)"
+            "parameters": {"response": "I am in LOCAL MODE (Offline). I can understand basic commands like 'open chrome', 'search for X', 'what time is it'. For complex tasks, I need a working OpenAI key."},
+            "reasoning": "Offline mode"
         }
-
 
 # Global AI brain instance
 ai_brain = AIBrain()

@@ -115,6 +115,11 @@ APP_MAPPINGS = {
     "spotify": ["spotify"],
     "discord": ["discord"],
     "slack": ["slack"],
+    "whatsapp": ["whatsapp"],
+    "settings": ["ms-settings:", "settings", "setting"],
+    "camera": ["microsoft.windows.camera:", "camera"],
+    "photos": ["microsoft.windows.photos:", "photos"],
+    "store": ["ms-windows-store:", "store", "microsoft store"],
 }
 
 

@@ -20,6 +20,7 @@ colorama>=0.4.6
 SpeechRecognition>=3.10.0
 pyttsx3>=2.90
 
-# Optional: Browser automation (uncomment if needed)
-# selenium>=4.16.0
-# playwright>=1.40.0
+# Browser automation
+selenium>=4.16.0
+webdriver-manager>=4.0.1
+beautifulsoup4>=4.12.0

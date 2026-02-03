@@ -1,15 +1,15 @@
 """
 FRIDAY - AI-Powered Desktop Automation Assistant
 Main entry point for the application.
-
-Security Architecture:
-1. AI (OpenAI) interprets user intent and returns structured JSON
-2. Commands are validated against a whitelist
-3. Only predefined, safe functions are executed
-4. Risky operations require user confirmation
 """
 
 import sys
+import io
+
+# Force UTF-8 encoding for stdout and stderr to handle emojis on Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -27,7 +27,6 @@ from friday.utils import (
     print_ai_response,
     print_divider,
     get_user_input,
-    format_action_result,
     show_help,
     clear_screen
 )
@@ -48,7 +47,7 @@ class FridayAssistant:
         
         # Check configuration
         if config.openai_api_key:
-            print_success("OpenAI API configured")
+            print_success("OpenAI API configured - AGENT MODE ACTIVE")
         else:
             print_warning("OpenAI API not configured - running in LOCAL MODE")
             print_info("Local mode uses pattern matching instead of AI")
@@ -74,24 +73,27 @@ class FridayAssistant:
                 if not user_input:
                     continue
                 
-                # Handle special commands
+                # Handle special commands (exit, help, etc.)
                 if self._handle_special_commands(user_input):
                     continue
                 
                 print_divider()
                 
                 # Process command through AI
-                print_info("Processing your request...")
+                print_info("Thinking...")
+                
+                # The Brain now handles the Agentic Loop (Think -> Tool -> Action -> Think)
+                # It returns the final response as a "chat" action
                 command = self.ai.process_command(user_input)
                 
-                # Execute command
-                exec_result = self.parser.parse_and_execute(command)
-                
-                # Display result
+                # In the new architecture, the brain executes tools internally.
+                # We mainly look for the final response.
                 if command["action"] == "chat":
                     response = command.get("parameters", {}).get("response", "")
                     print_ai_response(response)
                 else:
+                    # Fallback for local mode or legacy responses
+                    exec_result = self.parser.parse_and_execute(command)
                     if exec_result.get("success"):
                         print_success(exec_result.get("message", "Success"))
                     else:
@@ -110,12 +112,6 @@ class FridayAssistant:
     def _handle_special_commands(self, user_input: str) -> bool:
         """
         Handle special commands that don't need AI processing.
-        
-        Args:
-            user_input: User's input
-            
-        Returns:
-            True if command was handled, False otherwise
         """
         command = user_input.lower().strip()
         
@@ -127,63 +123,14 @@ class FridayAssistant:
             show_help()
             return True
         
-        elif command == "clear":
-            self.ai.clear_history()
-            print_success("Conversation history cleared")
-            return True
-        
-        elif command == "actions":
-            actions = self.parser.get_available_actions()
-            print_info("Available actions:")
-            for action in actions:
-                print(f"  • {action}")
-            return True
-        
-        elif command == "cls" or command == "clear screen":
+        elif command == "clear" or command == "cls":
             clear_screen()
             print_header()
             return True
         
-        elif command == "local mode":
-            self.ai.use_local_mode = True
-            print_success("Switched to LOCAL MODE (pattern matching)")
-            return True
-        
-        elif command == "advanced mode on" or command == "enable advanced mode":
-            self.parser.advanced_mode = True
-            print_warning("⚠️  ADVANCED MODE ENABLED")
-            print_warning("You now have broader system control!")
-            print_warning("All advanced actions require confirmation.")
-            print_info("New capabilities: execute_command, run_python, powershell, etc.")
-            return True
-        
-        elif command == "advanced mode off" or command == "disable advanced mode":
-            self.parser.advanced_mode = False
-            print_success("Advanced mode disabled - back to safe mode")
-            return True
-        
-        elif command == "mode" or command == "status":
-            ai_mode = "AI Mode" if not self.ai.use_local_mode else "Local Mode"
-            safety = "ADVANCED" if self.parser.advanced_mode else "SAFE"
-            print_info(f"Current mode: {ai_mode}")
-            print_info(f"Safety level: {safety}")
-            if self.parser.advanced_mode:
-                print_warning("⚠️  Advanced mode grants broader system access")
-            return True
-        
-        elif command == "ai mode":
-            if self.ai.openai_available:
-                self.ai.use_local_mode = False
-                print_success("Switched to AI MODE (OpenAI)")
-            else:
-                print_error("OpenAI is not available. Check your API key and quota.")
-            return True
-        
-        elif command == "mode":
-            mode = "LOCAL MODE" if self.ai.use_local_mode else "AI MODE"
-            status = "✅ Active" if self.ai.openai_available else "❌ Unavailable"
-            print_info(f"Current mode: {mode}")
-            print_info(f"OpenAI status: {status}")
+        elif command == "reset":
+            self.ai.conversation_history = []
+            print_success("Conversation history cleared")
             return True
         
         return False

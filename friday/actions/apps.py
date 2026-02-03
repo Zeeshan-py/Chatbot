@@ -150,41 +150,41 @@ def _open_app_windows(app_name: str) -> str:
     
     app_name_lower = app_name.lower()
     
-    # Check if we have specific paths for this app
+    # Check known locations first
     if app_name_lower in app_locations:
-        for path in app_locations[app_name_lower]:
-            if os.path.exists(path):
-                subprocess.Popen(f'"{path}"', shell=True)
+        for location in app_locations[app_name_lower]:
+            # Use glob for wildcards
+            if '*' in location:
+                import glob
+                matches = glob.glob(location)
+                if matches:
+                    location = matches[0]
+            
+            if os.path.exists(location):
+                subprocess.Popen([location])
                 return f"✅ Opening {app_name}..."
+
+    # Check for UWP/Shell commands (e.g. ms-settings:)
+    if "ms-" in app_name_lower or "shell:" in app_name_lower or app_name_lower == "whatsapp":
+         try:
+             # Try opening as a protocol or direct command
+             if app_name_lower == "whatsapp":
+                 os.system("start whatsapp:")
+             else:
+                 os.system(f"start {app_name}")
+             return f"✅ Opening {app_name}..."
+         except Exception:
+             pass
+
+    # Try generic 'start' command found in PATH
+    try:
+        # Use shell=True for internal commands and PATH resolution
+        os.system(f"start {app_name}") 
+        return f"✅ Opening {app_name}..."
+    except Exception:
+        pass
         
-        return f"❌ {app_name.title()} is not installed on your system"
-    
-    # Try direct command for other apps
-    try:
-        subprocess.Popen(app_name, shell=True)
-        return f"✅ Opening {app_name}..."
-    except Exception:
-        pass
-    
-    # Try with .exe extension
-    try:
-        subprocess.Popen(f"{app_name}.exe", shell=True)
-        return f"✅ Opening {app_name}..."
-    except Exception:
-        pass
-    
-    # Try common Program Files paths
-    common_paths = [
-        f"C:\\Program Files\\{app_name}\\{app_name}.exe",
-        f"C:\\Program Files (x86)\\{app_name}\\{app_name}.exe",
-    ]
-    
-    for path in common_paths:
-        if os.path.exists(path):
-            subprocess.Popen(f'"{path}"', shell=True)
-            return f"✅ Opening {app_name}..."
-    
-    return f"❌ Could not find {app_name}. Make sure it's installed."
+    return f"❌ {app_name} is not installed or not found in PATH."
 
 
 def _open_app_macos(app_name: str) -> str:

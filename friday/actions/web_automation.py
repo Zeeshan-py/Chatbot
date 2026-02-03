@@ -41,8 +41,15 @@ class WebAutomation:
             
             options = Options()
             
-            # Use default Chrome profile to avoid profile selection
-            options.add_argument("--profile-directory=Default")
+            # Use actual User Data Directory to load real profile
+            # This allows access to cookies, history, and logged-in sessions
+            import os
+            local_app_data = os.environ.get('LOCALAPPDATA')
+            if local_app_data:
+                user_data_dir = os.path.join(local_app_data, r'Google\Chrome\User Data')
+                options.add_argument(f"--user-data-dir={user_data_dir}")
+                options.add_argument("--profile-directory=Default")
+            
             options.add_argument("--disable-blink-features=AutomationControlled")
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
@@ -58,7 +65,7 @@ class WebAutomation:
             # Remove automation flags
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             
-            return "✅ Chrome browser started (default profile)"
+            return "✅ Chrome browser started (User Profile Loaded)"
             
         except Exception as e:
             return f"❌ Failed to start browser: {str(e)}"
@@ -421,3 +428,18 @@ def close_browser() -> str:
 def webpage_screenshot(filename: str = None) -> str:
     """Take webpage screenshot"""
     return web_automation.take_page_screenshot(filename)
+
+
+def click_element(text: str = None, selector: str = None) -> str:
+    """Click element"""
+    return web_automation.click_element(text, selector)
+
+
+def fill_form(field_selector: str, value: str) -> str:
+    """Fill form field"""
+    return web_automation.fill_form(field_selector, value)
+
+
+# Alias for AI Brain
+google_search = search_and_browse
+navigate_to = browse_to
