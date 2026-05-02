@@ -1,156 +1,145 @@
-"""
-FRIDAY - AI-Powered Desktop Automation Assistant
-Main entry point for the application.
-"""
-
-import sys
-import io
-
-# Force UTF-8 encoding for stdout and stderr to handle emojis on Windows
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-from pathlib import Path
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+"""Main CLI entrypoint for FRIDAY."""
 
 from friday.ai_brain import ai_brain
-from friday.command_parser import command_parser
 from friday.config import config
 from friday.utils import (
+    clear_screen,
+    get_user_input,
+    print_ai_response,
+    print_divider,
+    print_error,
     print_header,
     print_info,
     print_success,
-    print_error,
     print_warning,
-    print_ai_response,
-    print_divider,
-    get_user_input,
     show_help,
-    clear_screen
 )
 
 
 class FridayAssistant:
-    """Main FRIDAY assistant controller"""
-    
-    def __init__(self):
+    """Interactive terminal shell for the assistant agent."""
+
+    def __init__(self) -> None:
         self.running = False
         self.ai = ai_brain
-        self.parser = command_parser
-    
-    def start(self):
-        """Start the FRIDAY assistant"""
+
+    def start(self) -> None:
         clear_screen()
         print_header()
-        
-        # Check configuration
+
         if config.openai_api_key:
-            print_success("OpenAI API configured - AGENT MODE ACTIVE")
+            print_success(f"Agent mode active with model {config.openai_model}")
         else:
-            print_warning("OpenAI API not configured - running in LOCAL MODE")
-            print_info("Local mode uses pattern matching instead of AI")
-        
-        print_info("Type 'help' for available commands or 'exit' to quit")
+            print_warning("OpenAI API not configured. FRIDAY is in limited offline mode.")
+
+        print_info("Type 'help' for commands or 'exit' to quit.")
         print_divider()
-        
+
         self.running = True
         self.main_loop()
-    
-    def main_loop(self):
-        """Main interaction loop"""
+
+    def main_loop(self) -> None:
         while self.running:
             try:
-                # Get user input
                 user_input = get_user_input()
-                
                 if user_input is None:
-                    # Handle Ctrl+C or EOF
                     self.shutdown()
                     break
-                
                 if not user_input:
                     continue
-                
-                # Handle special commands (exit, help, etc.)
+
                 if self._handle_special_commands(user_input):
                     continue
-                
+
                 print_divider()
-                
-                # Process command through AI
                 print_info("Thinking...")
-                
-                # The Brain now handles the Agentic Loop (Think -> Tool -> Action -> Think)
-                # It returns the final response as a "chat" action
-                command = self.ai.process_command(user_input)
-                
-                # In the new architecture, the brain executes tools internally.
-                # We mainly look for the final response.
-                if command["action"] == "chat":
-                    response = command.get("parameters", {}).get("response", "")
-                    print_ai_response(response)
-                else:
-                    # Fallback for local mode or legacy responses
-                    exec_result = self.parser.parse_and_execute(command)
-                    if exec_result.get("success"):
-                        print_success(exec_result.get("message", "Success"))
-                    else:
-                        print_error(exec_result.get("message", "Failed"))
-                
+                response = self.ai.process_command(user_input)
+                print_ai_response(response.get("parameters", {}).get("response", ""))
                 print_divider()
-                
             except KeyboardInterrupt:
-                print("\n")
+                print()
                 self.shutdown()
                 break
-            except Exception as e:
-                print_error(f"Unexpected error: {str(e)}")
+            except Exception as exc:
+                print_error(f"Unexpected error: {exc}")
                 print_divider()
-    
+
     def _handle_special_commands(self, user_input: str) -> bool:
-        """
-        Handle special commands that don't need AI processing.
-        """
         command = user_input.lower().strip()
-        
-        if command in ["exit", "quit", "bye", "goodbye"]:
+
+        if command in {"exit", "quit", "bye", "goodbye"}:
             self.shutdown()
             return True
-        
-        elif command == "help":
+
+        if command == "help":
             show_help()
             return True
-        
-        elif command == "clear" or command == "cls":
+
+        if command in {"clear", "cls"}:
             clear_screen()
             print_header()
             return True
-        
-        elif command == "reset":
-            self.ai.conversation_history = []
-            print_success("Conversation history cleared")
+
+        if command == "reset":
+            self.ai.reset_memory()
+            print_success("Conversation memory cleared.")
             return True
-        
+
+        if command == "tools":
+            print_info(", ".join(self.ai.list_tools()))
+            return True
+
+        if command == "automations":
+            automations = self.ai.list_automations()
+            if not automations:
+                print_info("No saved automations.")
+            for item in automations:
+                print_info(f"{item['name']}: {item['description']} ({item['step_count']} steps)")
+            return True
+
+        if command == "schedules":
+            schedules = self.ai.list_schedules()
+            if not schedules:
+                print_info("No active schedules.")
+            for item in schedules:
+                print_info(
+                    f"{item['job_id']}: {item['automation_name']} every {item['interval']} {item['unit']}"
+                )
+            return True
+
+        if command == "voice on":
+            print_success(self.ai.set_voice_output(True))
+            return True
+
+        if command == "voice off":
+            print_success(self.ai.set_voice_output(False))
+            return True
+
+        if command == "listen":
+            try:
+                spoken = self.ai.voice.listen_once()
+                print_info(f"Heard: {spoken}")
+                print_divider()
+                response = self.ai.process_command(spoken)
+                print_ai_response(response.get("parameters", {}).get("response", ""))
+                print_divider()
+            except Exception as exc:
+                print_error(str(exc))
+            return True
+
         return False
-    
-    def shutdown(self):
-        """Shutdown FRIDAY gracefully"""
+
+    def shutdown(self) -> None:
         print_divider()
         print_info("Shutting down FRIDAY...")
-        print_success("Goodbye! 👋")
+        self.ai.scheduler.stop()
+        print_success("Goodbye.")
         self.running = False
 
 
-def main():
-    """Main entry point"""
-    try:
-        assistant = FridayAssistant()
-        assistant.start()
-    except Exception as e:
-        print_error(f"Failed to start FRIDAY: {str(e)}")
-        sys.exit(1)
+def main() -> None:
+    assistant = FridayAssistant()
+    assistant.start()
 
 
 if __name__ == "__main__":

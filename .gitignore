@@ -49,6 +49,7 @@ desktop.ini
 
 # Logs
 *.log
+logs/
 
 # Test files
 test_*.py
@@ -59,6 +60,7 @@ test_*.py
 *.temp
 temp/
 tmp/
+assistant_data/
 
 # API Keys and Secrets - CRITICAL!
 *_secrets.py

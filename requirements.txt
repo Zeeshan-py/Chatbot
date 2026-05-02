@@ -4,7 +4,7 @@
 python-dotenv>=1.0.0
 
 # OpenAI API
-openai>=1.12.0
+openai>=1.59.7
 
 # System automation
 pyautogui>=0.9.54
@@ -19,6 +19,9 @@ colorama>=0.4.6
 # Speech recognition (for voice mode - optional)
 SpeechRecognition>=3.10.0
 pyttsx3>=2.90
+
+# Lightweight task scheduler
+schedule>=1.2.2
 
 # Browser automation
 selenium>=4.16.0
